@@ -41,5 +41,5 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add index.php includes tests .gitignore LICENSE scripts .github/workflows/php-checks.yml dist
+          git add index.php includes tests .gitignore LICENSE scripts dist
           git diff --cached --quiet || (git commit -m 'feat: publish ZarinPal 2.4 source and installer' && git push)
