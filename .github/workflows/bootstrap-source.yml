@@ -2,7 +2,7 @@ name: Materialize source and installer
 on:
   push:
     paths:
-      - 'payload/source.tar.gz.b64'
+      - 'payload/READY'
       - '.github/workflows/bootstrap-source.yml'
   workflow_dispatch:
 permissions:
@@ -16,8 +16,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -s payload/source.tar.gz.b64
-          base64 -d payload/source.tar.gz.b64 > /tmp/source.tar.gz
+          test -s payload/READY
+          test "$(ls payload/chunk-*.txt | wc -l)" -eq 8
+          cat payload/chunk-*.txt | base64 -d > /tmp/source.tar.gz
           tar -tzf /tmp/source.tar.gz | while IFS= read -r p; do
             case "$p" in
               /*|../*|*/../*|*/..|*.env|*.env.*) echo "Unsafe entry: $p" >&2; exit 1;;
