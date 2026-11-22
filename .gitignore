@@ -1,0 +1,12 @@
+# Local tooling and secrets
+.DS_Store
+.idea/
+.vscode/
+.env
+.env.*
+!.env.example
+*.log
+phpunit.xml
+vendor/
+node_modules/
+.phpunit.result.cache
