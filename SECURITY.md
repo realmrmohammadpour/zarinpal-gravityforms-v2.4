@@ -1,3 +1,7 @@
+# Current release status — HOLD
+
+Production use of the 2.4.x previews is not approved. Read [the safety notice](docs/RELEASE_HOLD.md). Keep vulnerability reproductions and sensitive payment information private; do not disclose them through public issues. No supported stable version is currently available.
+
 # Security policy / سیاست گزارش آسیب‌پذیری
 
 This project processes payment state. It is an **independent, pre-production-validated rewrite**; no claim of external penetration testing, formal code audit or successful production transaction is made.

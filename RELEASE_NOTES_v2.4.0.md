@@ -1,3 +1,12 @@
+> [!CAUTION]
+> **Production use suspended — 24 November 2026.** The 2.4.x series is experimental and must not be installed for new live payment processing. Subsequent reviews identified unresolved payment-state, recovery, integration and privacy risks. No stable replacement has been approved.
+>
+> **If already deployed:** pause new payment initiation where safe, preserve the existing plugin/database and pending-payment callback route, reconcile completed and pending payments against the merchant's authoritative records, and check notifications/fulfillment separately. Do not blindly retry, manually mark entries Paid, uninstall, downgrade or discard pending records.
+>
+> **هشدار:** نسخه‌های 2.4.x برای استفاده مالی عملیاتی تأیید نشده‌اند. نصب جدید و به‌روزرسانی عملیاتی انجام ندهید. اگر نصب است، ابتدا مسیر دریافت پرداخت جدید را با حفظ Callback تراکنش‌های جاری کنترل کنید، بک‌آپ بگیرید و وضعیت مالی را با پنل زرین‌پال تطبیق دهید. از پرداخت مجدد یا حذف داده‌ها بدون بررسی خودداری کنید.
+>
+> See [safety notice](docs/RELEASE_HOLD.md) and [development status](docs/V2_5_RELEASE_GATES.md). This warning does not assert that any customer data has been exposed or that any particular live payment is incorrect.
+
 # ZarinPal for Gravity Forms 2.4.0 — Preview release
 
 **Independent, unofficial rewrite** based on the compatibility needs discovered in [ZarinPal-Lab/GravityForms](https://github.com/ZarinPal-Lab/GravityForms) v2.3.0. The original project last received a source commit on **20 June 2018**. Credit for the original plugin belongs to its authors and maintainers; v2.4.0 is not an official ZarinPal release.
