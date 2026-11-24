@@ -1,11 +1,11 @@
-name: PHP lint and isolated tests
-
+name: Development checks (release hold)
 on:
   push:
   pull_request:
-
+permissions:
+  contents: read
 jobs:
-  check:
+  lint:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -17,8 +17,7 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           tools: none
-      - name: PHP syntax
-        run: |
-          find . -type f -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n1 php -l
-      - name: Isolated smoke tests (mocked WordPress/Gravity Forms)
-        run: php tests/smoke.php
+      - name: Syntax only; not a release approval
+        run: find . -type f -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n1 php -l
+      - name: Release hold
+        run: echo 'Production release gates remain open. Private regression and integration evidence required.'

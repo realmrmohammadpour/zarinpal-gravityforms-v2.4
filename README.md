@@ -1,101 +1,16 @@
+# ZarinPal Gravity Forms — historical 2.4.2 source / v2.5 development
+
 > [!CAUTION]
-> **Production use suspended — 24 November 2026.** The 2.4.x series is experimental and must not be installed for new live payment processing. Subsequent reviews identified unresolved payment-state, recovery, integration and privacy risks. No stable replacement has been approved.
->
-> **If already deployed:** pause new payment initiation where safe, preserve the existing plugin/database and pending-payment callback route, reconcile completed and pending payments against the merchant's authoritative records, and check notifications/fulfillment separately. Do not blindly retry, manually mark entries Paid, uninstall, downgrade or discard pending records.
->
-> **هشدار:** نسخه‌های 2.4.x برای استفاده مالی عملیاتی تأیید نشده‌اند. نصب جدید و به‌روزرسانی عملیاتی انجام ندهید. اگر نصب است، ابتدا مسیر دریافت پرداخت جدید را با حفظ Callback تراکنش‌های جاری کنترل کنید، بک‌آپ بگیرید و وضعیت مالی را با پنل زرین‌پال تطبیق دهید. از پرداخت مجدد یا حذف داده‌ها بدون بررسی خودداری کنید.
->
-> See [safety notice](docs/RELEASE_HOLD.md) and [development status](docs/V2_5_RELEASE_GATES.md). This warning does not assert that any customer data has been exposed or that any particular live payment is incorrect.
+> **NOT FOR PRODUCTION.** 2.4.x is on release hold; no stable replacement is approved. Do not install from this branch or create a live payment deployment.
 
-# زرین‌پال برای Gravity Forms — نسخهٔ مستقل 2.4.0
+Independent, unofficial rewrite of [ZarinPal-Lab/GravityForms](https://github.com/ZarinPal-Lab/GravityForms).
 
-**افزونهٔ سازگاری و بازنویسی مستقل (غیررسمی)**، برای اتصال پرداخت‌های یک‌مرحله‌ای Gravity Forms به ZarinPal REST API v4. این کد جایگزین مستقل نسخهٔ 2.3.0 قدیمی مخزن ZarinPal-Lab/GravityForms است و فاقد وابستگی SOAP یا `RG_CURRENT_VIEW` است.
+- [Safety notice](docs/RELEASE_HOLD.md)
+- [Source baseline and checksum](docs/BASELINE_2_4_2.md)
+- [Release gates](docs/V2_5_RELEASE_GATES.md)
+- [Acceptance matrix](docs/ACCEPTANCE_MATRIX.md)
+- [Security policy](SECURITY.md)
 
-> **مهم:** نسخهٔ 2.4.0 با آزمون‌های ایزوله و PHP Syntax بررسی شده، ولی هنوز روی سرور واقعی با Gravity Forms 3.x یا حساب حقیقی زرین‌پال تست End-to-End نشده است. **مستقیماً روی سایت مالی زنده بدون نسخهٔ پشتیبان، Staging و پرداخت آزمایشی نصب نکنید.** هیچ افزونه پرداختی را نمی‌توان صرفاً با تست Mock «بدون هیچ اشکال» اعلام کرد.
+The five PHP source files are preserved unchanged from 2.4.2 for regression work. This branch contains no supported installer and no release workflow. Detailed reproductions and customer/merchant records must remain private. The development branch will not be merged to main or released until all release gates are met.
 
-## پیش‌نیازها
-
-- WordPress دارای HTTPS و اتصال خروجی معتبر به `payment.zarinpal.com`؛ محیط تست: `sandbox.zarinpal.com`
-- PHP نسخهٔ **7.4 یا بالاتر**؛ توصیه‌شده: PHP 8.2+ (کد روی PHP 8.4 Lint شده است)
-- Gravity Forms **2.9 یا بالاتر**؛ با هدف پشتیبانی از Gravity Forms 3.x (هنوز بدون تست یکپارچه واقعی)
-- Merchant ID معتبر زرین‌پال (UUID)؛ برای Sandbox، Merchant ID آزمایشی مطابق مستندات رسمی
-- Gravity Forms فارسی اختیاری است؛ هیچ وابستگی به هستهٔ قدیمی آن وجود ندارد.
-
-## نصب/جایگزینی نسخهٔ 2.3.0
-
-1. **ابتدا بک‌آپ کامل دیتابیس و پوشهٔ افزونهٔ قدیمی** را تهیه و در محیط Staging بازیابی کنید. به‌ویژه جداول Gravity Forms و جدول `[prefix]gf_zarinpal` را نگه دارید. تنظیمات Merchant و Feedها را یادداشت کنید.
-2. **تمام پرداخت‌های 2.3.0 در انتظار بازگشت را تسویه یا تعیین تکلیف کنید.** Callbackهای SOAP قدیمی در نسخهٔ جدید قابل بازیابی خودکار نیستند.
-3. از مسیر «افزونه‌ها ← افزودن افزونه ← بارگذاری افزونه» فایل `ZarinPal-GravityForms-2.4.0.zip` را آپلود کنید و گزینه جایگزینی نسخه قدیمی را انتخاب کنید. ZIP پوشهٔ `GravityForms-master` را دارد تا همان مسیر نسخهٔ قدیمی به‌روزرسانی شود. **گزینهٔ Uninstall نسخهٔ قدیمی را اجرا نکنید**؛ خود نسخه قدیمی ممکن است جدول Feedها را پاک کند.
-4. پس از فعال‌سازی وارد پیشخوان مدیریت شوید؛ انتقال تنظیمات Merchant و Feedهای قدیمی در `admin_init` اجرا می‌شود. جدول و گزینه‌های قبلی پاک نمی‌شوند.
-5. در «فرم‌ها ← تنظیمات ← زرین‌پال 2.4» مقدار **Merchant ID**، گزینه **Sandbox** و واحدهای **IRT / IRR** را بررسی کنید.
-6. در «فرم‌ها ← فرم موردنظر ← تنظیمات ← زرین‌پال 2.4»، Feed مربوطه را بازبینی کنید. **همهٔ Feedهای منتقل‌شده عمداً غیرفعال ساخته می‌شوند تا قبل از بازبینی قیمت و منطق شرطی، پرداخت ناخواسته شروع نشود.** پس از کنترل مبلغ و فیلدها، Feed را فعال کنید.
-7. در فرم، حداقل یک Product Field با قیمت مثبت داشته باشید. مثال: `[gravityform id="YOUR_FORM_ID" title="false" ajax="true"]`؛ شناسه را جایگزین کنید و برای فرم یک فیلد قیمت‌گذاری معتبر تنظیم کنید.
-
-## واحد پول
-
-- `source_currency`: واحد واقعی عدد نهایی **در فرم** Gravity Forms؛ مثلاً `260000` برای ۲۶۰ هزار تومان یعنی `IRT`.
-- `gateway_currency`: واحد ارسال‌شده به ZarinPal API؛ قابل انتخاب بین `IRT` و `IRR`.
-- تبدیل تومان به ریال ضرب در ۱۰ و ریال به تومان تقسیم بر ۱۰ است. تبدیل غیرصحیح/اعشاری رد می‌شود و پرداخت شروع نخواهد شد.
-- **مهاجرت از 2.3.0 واحدهای IRT/IRT را به‌عنوان پیش‌فرض قرار می‌دهد؛ این فقط پیش‌فرض است و باید مطابق تنظیمات واقعی سایت تأیید شود.**
-
-## نحوهٔ کار
-
-1. Gravity Forms فرم و Entry را ایجاد و مبلغ نهایی را محاسبه می‌کند.
-2. افزونه مبلغ و واحد پول انتخابی، Merchant ID و یک Token امضاشده را در متای Entry ذخیره می‌کند.
-3. ZarinPal API v4 یک Authority صادر می‌کند و افزونه مقدار آن را در همان Entry ذخیره و کاربر را به StartPay هدایت می‌کند.
-4. Callback با Token غیرقابل حدس و تطبیق دقیق Authority با Entry بررسی می‌شود؛ وضعیت Query String به‌تنهایی اثبات پرداخت نیست.
-5. Verify در سمت سرور با مبلغ **ثبت‌شده هنگام شروع پرداخت** اجرا می‌شود. فقط کد `100` با `ref_id` معتبر باعث تکمیل پرداخت است. کد `101` تنها با `ref_id` از قبل ذخیره‌شده و مطابق پذیرفته می‌شود.
-6. با `GFPaymentAddOn::complete_payment` وضعیت Entry به Paid تغییر می‌کند؛ تراکنش ثبت شده و Feedهای وابسته با قفل و جلوگیری از پردازش تکراری فعال می‌شوند.
-7. در حالت اختلال شبکه یا پاسخ نامعتبر، وضعیت به `review` تغییر می‌کند؛ پرداخت خودکار Failed یا Paid اعلام نمی‌شود. کاربر از صفحه رسید می‌تواند تأیید را مجدداً امتحان کند.
-
-## Cache، فایروال و Seraphinite Accelerator
-
-دو نوع URL در مسیر ریشهٔ سایت استفاده می‌شوند؛ Query Stringهای زیر **نباید cache شوند**:
-
-- `/?zp24_callback=1&entry_id=...&token=...` (پس از بازگشت از بانک، شامل `Authority` و `Status`)
-- `/?zp24_receipt=ENTRY_ID&token=...` (نمایش رسید)
-
-افزونه `DONOTCACHEPAGE`، هدرهای `no-cache` و `noindex` را تا حد امکان تنظیم می‌کند، ولی افزونه‌های Full Page Cache ممکن است **قبل از اجرای PHP افزونه** پاسخ را سرو کنند؛ در تنظیمات Seraphinite و هر CDN یا WAF، تمام درخواست‌های دارای پارامتر `zp24_callback` یا `zp24_receipt` را از کش مستثنا کنید. Query String و Token نباید توسط افزونه‌های بهینه‌سازی حذف شوند. مسیردهی، ریدایرکت HTTPS، Cloudflare و فایروال نباید Callback زرین‌پال را مسدود کنند.
-
-## سازگاری با افزونه‌های دیگر
-
-- WooCommerce ZarinPal (نسخهٔ WooCommerce) سیستم جداگانه‌ای است و معمولاً تداخلی با این Add-On ندارد.
-- فیدهای Gravity Forms، ثبت یادداشت، داده‌های Entry و Triggerهای پرداخت استاندارد استفاده می‌شوند.
-- ارسال اعلان‌ها، User Registration و سایر Feedهای Deferred باید روی Staging با **پرداخت موفق واقعی در محیط Sandbox** ارزیابی شوند. Hookهای سفارشی افزونهٔ قدیمی 2.3.0 مستقیماً بازنویسی نشده‌اند.
-
-## محدودیت‌های مشخص نسخهٔ 2.4.0
-
-- فقط پرداخت یک‌مرحله‌ای/Products & Services؛ Subscription و Recurring، Reverse، Refund، پنل پیشرفته گزارش‌گیری نسخه قدیمی و پرداخت‌های سفارشی (`custom` با Hookهای HANNANStd) پشتیبانی نمی‌شوند.
-- پرداخت‌هایی که پیش از بروزرسانی در افزونهٔ 2.3.0 باز مانده‌اند، خودکار به جریان جدید منتقل نمی‌شوند.
-- تنظیمات پیچیدهٔ منطق شرطی منتقل می‌شوند اما **باید بازبینی شوند**؛ فیدهای دارای وضعیت‌های سفارشی پست هم نیاز به بازبینی دارند.
-- بازیابی خودکار تراکنش پس از خروج کاربر از بانک بدون Callback (Cron Reconciliation) در این نسخه وجود ندارد؛ در این حالت باید تراکنش نامشخص به‌صورت دستی بررسی شود.
-- در اختلال شبکه بین ثبت GF Payment و اجرای Feed وابسته، رسید Paid ممکن است ثبت شده باشد ولی Feed وابسته نیازمند بررسی مجدد باشد. مهاجرت فیدها به‌معنای تضمین اجرای اتوماسیون‌های جانبی نیست.
-- اجرای تست روی PHP 8.4 و Mock صورت گرفته، نه روی نسخهٔ واقعی Gravity Forms 3.2.3.1 و PHP 8.3 سایت شما.
-
-## چک‌لیست قبل از Production
-
-- [ ] تست ورود به تنظیمات درگاه بدون Fatal Error
-- [ ] اتصال API در Sandbox و نمایش صفحه بانک
-- [ ] مبلغ واقعی مورد انتظار از Entry تا پنل زرین‌پال دقیقاً یکسان
-- [ ] بازگشت موفق، `payment_status = Paid` و یک `transaction_id` معتبر
-- [ ] لغو توسط کاربر و بررسی status `Cancelled`
-- [ ] درخواست مجدد Callback موفق باعث ثبت تراکنش تکراری نشود
-- [ ] شبیه‌سازی قطع ارتباط Verify → حالت نیازمند بررسی (نه Paid/Failed)
-- [ ] ثبت‌نام کاربر، ایمیل/پیامک و Feedهای وابسته فقط پس از پرداخت موفق
-- [ ] ثبت اطلاعات Entry، فونت/صفحه رسید در موبایل و AJAX فعال
-- [ ] خروج از بانک بدون Callback و راهکار بررسی دستی
-- [ ] تست به‌روزرسانی از نسخه 2.3 روی کپی دیتابیس واقعی
-- [ ] استثنای Cache برای دو مسیر Callback و Receipt
-
-## یادداشت‌های توسعه‌دهندگان
-
-- فایل اصلی: `index.php`
-- کلاس API: `includes/class-zp24-api.php`
-- افزونهٔ Gravity Forms و Callback: `includes/class-gf-zarinpal-v24.php`
-- مهاجرت غیرتخریبی Feedهای 2.3: `includes/class-zp24-migrator.php`
-- متای داخلی: `zp24_state`, `zp24_authority`, `zp24_amount`, `zp24_source_amount`, `zp24_verified_ref_id`, `zp24_delayed_feeds_done`, `zp24_feed_id`
-- نتایج مالی: کد 100 با Ref ID = پرداخت قابل تکمیل؛ کد 101 تنها در صورت تطبیق با تأیید ذخیره‌شده؛ Timeout/HTTP نامشخص = `review`.
-
-مستندات: [Gravity Forms GFPaymentAddOn](https://docs.gravityforms.com/gfpaymentaddon/) · [ZarinPal Payment Gateway](https://www.zarinpal.com/docs/paymentGateway/) · [مخزن قدیمی](https://github.com/ZarinPal-Lab/GravityForms/)
-
-نسخه 2.4.0 یک بازنویسی مستقل برای استفاده تحت مجوز GPL-2.0-or-later است و انتشار رسمی از سوی زرین‌پال محسوب نمی‌شود.
+**فارسی:** این شاخه صرفاً مبنای تاریخی برای توسعه و تست است. نسخه قابل نصب یا تأییدشده محسوب نمی‌شود. سوابق مالی، نسخه پشتیبان و پرداخت‌های جاری را قبل از هر تغییر عملیاتی حفظ کنید.

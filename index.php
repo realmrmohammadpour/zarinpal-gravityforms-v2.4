@@ -2,7 +2,7 @@
 /**
  * Plugin Name: درگاه زرین‌پال برای Gravity Forms (نسخه 2.4)
  * Description: افزونه پرداخت زرین‌پال بر پایه API v4 و چارچوب پرداخت Gravity Forms؛ با انتقال امن تنظیمات و فیدهای نسخه 2.3.
- * Version: 2.4.0
+ * Version: 2.4.2
  * Requires PHP: 7.4
  * Text Domain: gf-zarinpal-v24
  * Author: MH (Independent compatibility rewrite)
@@ -18,7 +18,7 @@ if ( ( isset( $_GET['zp24_callback'] ) || isset( $_GET['zp24_receipt'] ) ) && ! 
     define( 'DONOTCACHEPAGE', true );
 }
 
-define( 'ZP24_VERSION', '2.4.0' );
+define( 'ZP24_VERSION', '2.4.2' );
 define( 'ZP24_PLUGIN_FILE', __FILE__ );
 define( 'ZP24_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 
@@ -46,6 +46,7 @@ final class ZP24_Bootstrap {
         GFForms::include_payment_addon_framework();
         require_once ZP24_PLUGIN_DIR . 'includes/class-zp24-api.php';
         require_once ZP24_PLUGIN_DIR . 'includes/class-zp24-migrator.php';
+        require_once ZP24_PLUGIN_DIR . 'includes/class-zp24-persian-compat.php';
         require_once ZP24_PLUGIN_DIR . 'includes/class-gf-zarinpal-v24.php';
         GFAddOn::register( 'ZP24_Gravity_Forms_Addon' );
         add_action( 'admin_init', array( 'ZP24_Migrator', 'maybe_migrate' ), 30 );

@@ -191,6 +191,8 @@ final class ZP24_Gravity_Forms_Addon extends GFPaymentAddOn {
             'zp24_state'            => 'initializing',
             'zp24_authority'        => '',
             'zp24_verified_ref_id'  => '',
+            'zp24_completion_returned' => '0',
+            'zp24_completion_needs_review' => '0',
         );
         foreach ( $meta as $key => $value ) {
             gform_update_meta( $entry_id, $key, $value );
@@ -298,29 +300,40 @@ final class ZP24_Gravity_Forms_Addon extends GFPaymentAddOn {
             exit;
         }
         try {
-            $state = (string) gform_get_meta( $entry_id, 'zp24_state' );
-            if ( 'paid' !== $state && 'Paid' !== rgar( $entry, 'payment_status' ) ) {
-                $expected_authority = (string) gform_get_meta( $entry_id, 'zp24_authority' );
-                if ( ! $expected_authority || ! $authority || ! hash_equals( $expected_authority, $authority ) || ! in_array( $status, array( 'OK', 'NOK' ), true ) ) {
-                    $this->safe_note( $entry_id, 'زرین‌پال: پارامترهای Callback معتبر نیستند.' );
-                    gform_update_meta( $entry_id, 'zp24_state', 'review' );
-                } elseif ( $status === 'NOK' ) {
-                    $this->update_status( $entry_id, 'Cancelled', 'cancelled' );
-                    $this->safe_note( $entry_id, 'زرین‌پال: خریدار پرداخت را لغو کرد یا درگاه وضعیت NOK برگرداند.' );
-                } else {
-                    $this->process_verified_payment( $entry_id, $entry );
-                }
-            }
-            // Resume a previously verified, already-Paid Entry if execution stopped after GF wrote its status.
-            $latest = GFAPI::get_entry( $entry_id );
-            if ( is_array( $latest ) && 'Paid' === rgar( $latest, 'payment_status' ) ) {
-                $this->finalize_verified_entry( $entry_id, $latest );
-            }
+            $this->process_locked_return( $entry_id, $entry, $authority, $status );
         } finally {
             delete_option( 'zp24_lock_' . $entry_id );
         }
         wp_safe_redirect( $this->receipt_url( $entry_id, $token ), 303 );
         exit;
+    }
+
+    /** Called only while the signed callback holds the entry lock. */
+    private function process_locked_return( $entry_id, $entry, $authority, $status ) {
+        $state = (string) gform_get_meta( $entry_id, 'zp24_state' );
+        // A previous request may have stopped inside complete_payment(), including the 2.4.0
+        // Persian Forms TypeError. Do not automatically replay partially executed payment actions.
+        if ( 'committing' === $state && '1' !== (string) gform_get_meta( $entry_id, 'zp24_completion_returned' ) ) {
+            $this->mark_completion_interrupted( $entry_id, $entry );
+            $state = (string) gform_get_meta( $entry_id, 'zp24_state' );
+        }
+        if ( '1' !== (string) gform_get_meta( $entry_id, 'zp24_completion_needs_review' ) && 'paid' !== $state && 'Paid' !== rgar( $entry, 'payment_status' ) ) {
+            $expected_authority = (string) gform_get_meta( $entry_id, 'zp24_authority' );
+            if ( ! $expected_authority || ! $authority || ! hash_equals( $expected_authority, $authority ) || ! in_array( $status, array( 'OK', 'NOK' ), true ) ) {
+                $this->safe_note( $entry_id, 'زرین‌پال: پارامترهای Callback معتبر نیستند.' );
+                gform_update_meta( $entry_id, 'zp24_state', 'review' );
+            } elseif ( $status === 'NOK' ) {
+                $this->update_status( $entry_id, 'Cancelled', 'cancelled' );
+                $this->safe_note( $entry_id, 'زرین‌پال: خریدار پرداخت را لغو کرد یا درگاه وضعیت NOK برگرداند.' );
+            } else {
+                $this->process_verified_payment( $entry_id, $entry );
+            }
+        }
+        // Resume a previously verified, already-Paid Entry if execution stopped after GF wrote its status.
+        $latest = GFAPI::get_entry( $entry_id );
+        if ( is_array( $latest ) && 'Paid' === rgar( $latest, 'payment_status' ) ) {
+            $this->finalize_verified_entry( $entry_id, $latest );
+        }
     }
 
     private function process_verified_payment( $entry_id, $entry ) {
@@ -366,13 +379,40 @@ final class ZP24_Gravity_Forms_Addon extends GFPaymentAddOn {
             'payment_status'   => 'Paid',
             'note'             => 'پرداخت موفق زرین‌پال؛ کد رهگیری: ' . $ref,
         );
-        $this->complete_payment( $entry, $action );
+        try {
+            ZP24_Persian_Compat::run( function () use ( $entry, $action ) {
+                $this->complete_payment( $entry, $action );
+            } );
+            gform_update_meta( $entry_id, 'zp24_completion_returned', '1' );
+        } catch ( Throwable $exception ) {
+            // Verification is not a failed payment just because a downstream hook threw.
+            // Keep the bank reference, do not replay notifications/transactions, and flag review.
+            $this->mark_completion_interrupted( $entry_id, GFAPI::get_entry( $entry_id ), get_class( $exception ) );
+            return;
+        }
         $updated_entry = GFAPI::get_entry( $entry_id );
         if ( is_array( $updated_entry ) && 'Paid' === rgar( $updated_entry, 'payment_status' ) ) {
             $this->finalize_verified_entry( $entry_id, $updated_entry );
         } else {
             gform_update_meta( $entry_id, 'zp24_state', 'review' );
             $this->safe_note( $entry_id, 'زرین‌پال: Verify موفق اما ثبت وضعیت Gravity Forms نیازمند بررسی است.' );
+        }
+    }
+
+    /** Preserve confirmed financial state, but require manual review of interrupted side effects. */
+    private function mark_completion_interrupted( $entry_id, $entry, $error_class = '' ) {
+        $already_flagged = '1' === (string) gform_get_meta( $entry_id, 'zp24_completion_needs_review' );
+        gform_update_meta( $entry_id, 'zp24_completion_needs_review', '1' );
+        $ref = (string) gform_get_meta( $entry_id, 'zp24_verified_ref_id' );
+        $paid = is_array( $entry ) && 'Paid' === rgar( $entry, 'payment_status' )
+            && '' !== $ref && hash_equals( $ref, (string) rgar( $entry, 'transaction_id' ) );
+        gform_update_meta( $entry_id, 'zp24_state', $paid ? 'paid' : 'review' );
+        if ( ! $already_flagged ) {
+            $message = 'زرین‌پال: ثبت یا عملیات پس از پرداخت قبلاً متوقف شده است. وضعیت بانکی، ورودی، اعلان‌ها، پیامک‌ها و فیدهای وابسته را بررسی کنید. اجرای مجدد خودکار انجام نمی‌شود.';
+            if ( '' !== $error_class ) {
+                $message .= ' (' . sanitize_text_field( $error_class ) . ')';
+            }
+            $this->safe_note( $entry_id, $message );
         }
     }
 
@@ -383,7 +423,7 @@ final class ZP24_Gravity_Forms_Addon extends GFPaymentAddOn {
             return;
         }
         gform_update_meta( $entry_id, 'zp24_state', 'paid' );
-        if ( '1' === (string) gform_get_meta( $entry_id, 'zp24_delayed_feeds_done' ) ) {
+        if ( '1' === (string) gform_get_meta( $entry_id, 'zp24_completion_needs_review' ) || '1' === (string) gform_get_meta( $entry_id, 'zp24_delayed_feeds_done' ) ) {
             return;
         }
         $form_id = absint( rgar( $entry, 'form_id' ) );
@@ -396,7 +436,92 @@ final class ZP24_Gravity_Forms_Addon extends GFPaymentAddOn {
         }
         // Set before dispatch: payment callbacks cannot invoke an add-on feed twice.
         gform_update_meta( $entry_id, 'zp24_delayed_feeds_done', '1' );
-        $this->trigger_payment_delayed_feeds( $ref, $payment_feed, $entry, $form );
+        try {
+            $this->trigger_payment_delayed_feeds( $ref, $payment_feed, $entry, $form );
+        } catch ( Throwable $exception ) {
+            $this->mark_completion_interrupted( $entry_id, $entry, get_class( $exception ) );
+        }
+    }
+
+    /** Resolve only the native confirmation for an already authenticated, verified payment.
+     * Do not replay handle_confirmation() or gform_confirmation: payment add-ons can
+     * replace that result with a new payment redirect during initial form submission.
+     */
+    private function resolve_paid_confirmation( $entry_id, $entry ) {
+        if ( ! is_array( $entry ) || (int) rgar( $entry, 'id' ) !== (int) $entry_id
+            || 'Paid' !== rgar( $entry, 'payment_status' )
+            || 'paid' !== (string) gform_get_meta( $entry_id, 'zp24_state' )
+            || '1' === (string) gform_get_meta( $entry_id, 'zp24_completion_needs_review' )
+            || in_array( rgar( $entry, 'status' ), array( 'spam', 'trash' ), true ) ) {
+            return array();
+        }
+        $ref = (string) gform_get_meta( $entry_id, 'zp24_verified_ref_id' );
+        if ( '' === $ref || ! hash_equals( $ref, (string) rgar( $entry, 'transaction_id' ) ) ) {
+            return array();
+        }
+        try {
+            $form_id = absint( rgar( $entry, 'form_id' ) );
+            $form = $form_id ? GFAPI::get_form( $form_id ) : false;
+            if ( ! is_array( $form ) || (int) rgar( $form, 'id' ) !== $form_id || empty( $form['confirmations'] ) ) {
+                return array();
+            }
+            if ( ! class_exists( 'GFFormDisplay' ) && is_callable( array( 'GFCommon', 'get_base_path' ) ) ) {
+                $display_path = trailingslashit( GFCommon::get_base_path() ) . 'form_display.php';
+                if ( is_readable( $display_path ) ) {
+                    require_once $display_path;
+                }
+            }
+            if ( ! is_callable( array( 'GFFormDisplay', 'update_confirmation' ) ) ) {
+                return array();
+            }
+            // Gravity Forms selects the conditional/default confirmation against this exact Entry.
+            $form = GFFormDisplay::update_confirmation( $form, $entry );
+            $confirmation = rgar( $form, 'confirmation' );
+            if ( ! is_array( $confirmation ) || ( isset( $confirmation['isActive'] ) && ! $confirmation['isActive'] ) ) {
+                return array();
+            }
+            $type = rgar( $confirmation, 'type' );
+            if ( 'message' === $type && is_callable( array( 'GFFormDisplay', 'get_confirmation_message' ) ) ) {
+                $message = GFFormDisplay::get_confirmation_message( $confirmation, $form, $entry );
+                return is_string( $message ) && '' !== trim( $message ) ? array( 'message' => $message ) : array();
+            }
+            if ( ! in_array( $type, array( 'page', 'redirect' ), true ) || ! is_callable( array( 'GFFormDisplay', 'get_confirmation_url' ) ) ) {
+                return array();
+            }
+            // Page confirmations must point to a real published page. Do not fall through to
+            // an old redirect URL from a confirmation that was subsequently changed to Page.
+            if ( 'page' === $type ) {
+                $page_id = absint( rgar( $confirmation, 'pageId' ) );
+                if ( ! $page_id || 'publish' !== get_post_status( $page_id ) ) {
+                    return array();
+                }
+            }
+            // The native builder expects queryString, even when the administrator left it blank.
+            $confirmation['queryString'] = (string) rgar( $confirmation, 'queryString' );
+            $target = GFFormDisplay::get_confirmation_url( $confirmation, $form, $entry );
+            if ( ! is_string( $target ) || '' === trim( $target ) ) {
+                return array();
+            }
+            $target = wp_validate_redirect( wp_sanitize_redirect( $target ), '' );
+            if ( '' === $target ) {
+                return array(); // Same-site or explicitly allowed hosts only.
+            }
+            $parts = wp_parse_url( $target );
+            if ( ! is_array( $parts ) || ! in_array( strtolower( (string) rgar( $parts, 'scheme' ) ), array( 'http', 'https' ), true )
+                || empty( $parts['host'] ) || isset( $parts['user'] ) || isset( $parts['pass'] ) ) {
+                return array();
+            }
+            $query = array();
+            parse_str( (string) rgar( $parts, 'query' ), $query );
+            if ( array_key_exists( 'zp24_callback', $query ) || array_key_exists( 'zp24_receipt', $query ) ) {
+                return array(); // A mistaken confirmation must not loop into the gateway endpoints.
+            }
+            // Never automatically append the callback token, Authority or the receipt URL.
+            return array( 'redirect' => $target );
+        } catch ( Throwable $exception ) {
+            // A misconfigured confirmation must not turn a successful payment into a fatal error.
+            return array();
+        }
     }
 
     private function render_receipt() {
@@ -404,7 +529,7 @@ final class ZP24_Gravity_Forms_Addon extends GFPaymentAddOn {
         nocache_headers();
         header( 'X-Robots-Tag: noindex, nofollow', true );
         header( 'Referrer-Policy: no-referrer', true );
-        $entry_id = absint( $_GET['zp24_receipt'] );
+        $entry_id = is_scalar( $_GET['zp24_receipt'] ) ? absint( $_GET['zp24_receipt'] ) : 0;
         $token = isset( $_GET['token'] ) && is_scalar( $_GET['token'] ) ? sanitize_text_field( wp_unslash( $_GET['token'] ) ) : '';
         $entry = $this->authorized_entry( $entry_id, $token );
         if ( ! $entry ) {
@@ -415,10 +540,17 @@ final class ZP24_Gravity_Forms_Addon extends GFPaymentAddOn {
             $this->update_status( $entry_id, 'Failed', 'error' );
             $entry = GFAPI::get_entry( $entry_id );
         }
-        $paid  = ( 'paid' === $state && 'Paid' === rgar( $entry, 'payment_status' ) );
+        $needs_review = '1' === (string) gform_get_meta( $entry_id, 'zp24_completion_needs_review' );
+        $ref = (string) gform_get_meta( $entry_id, 'zp24_verified_ref_id' );
+        $paid = ( 'paid' === $state && 'Paid' === rgar( $entry, 'payment_status' ) && '' !== $ref
+            && hash_equals( $ref, (string) rgar( $entry, 'transaction_id' ) ) );
+        $confirmation = $paid && ! $needs_review ? $this->resolve_paid_confirmation( $entry_id, $entry ) : array();
+        if ( ! empty( $confirmation['redirect'] ) && ! headers_sent() && wp_safe_redirect( $confirmation['redirect'], 303, 'ZarinPal Gravity Forms' ) ) {
+            exit;
+        }
         if ( $paid ) {
             $title = 'پرداخت با موفقیت انجام شد';
-            $message = 'تراکنش شما توسط زرین‌پال تأیید و در سیستم ثبت شد.';
+            $message = $needs_review ? 'پرداخت شما تأیید و ثبت شده است، اما تکمیل عملیات بعد از پرداخت نیازمند بررسی پشتیبانی است. لطفاً پرداخت را تکرار نکنید.' : 'تراکنش شما توسط زرین‌پال تأیید و در سیستم ثبت شد.';
         } elseif ( 'cancelled' === $state ) {
             $title = 'پرداخت لغو شد';
             $message = 'پرداختی ثبت نشده است. برای تلاش مجدد فرم را از نو تکمیل کنید.';
@@ -440,7 +572,10 @@ final class ZP24_Gravity_Forms_Addon extends GFPaymentAddOn {
             $ref = (string) gform_get_meta( $entry_id, 'zp24_verified_ref_id' );
             echo '<p style="font-weight:700;color:#167a51">کد رهگیری: <bdi>' . esc_html( $ref ) . '</bdi></p>';
         }
-        if ( in_array( $state, array( 'review', 'committing' ), true ) ) {
+        if ( $paid && ! empty( $confirmation['message'] ) ) {
+            echo '<div class="zp24-confirmation" style="margin-top:20px;line-height:2">' . wp_kses_post( $confirmation['message'] ) . '</div>';
+        }
+        if ( ! $needs_review && in_array( $state, array( 'review', 'committing' ), true ) ) {
             $authority = (string) gform_get_meta( $entry_id, 'zp24_authority' );
             if ( $authority ) {
                 $retry = add_query_arg( array( 'zp24_callback' => '1', 'entry_id' => $entry_id, 'token' => $token, 'Authority' => $authority, 'Status' => 'OK' ), home_url( '/' ) );
